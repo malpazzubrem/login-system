@@ -83,6 +83,10 @@ def login():
         if username != '' and password != '':
             user = Profile.query.filter_by(username=username).first() #getting base data
 
+            if user == None:
+                print("wrong username")
+                return render_template("log_in.html",error="Wrong username or password")
+
             user_1 = bcrypt.check_password_hash(user.password, password) #checking passwords
 
             if user_1 and user.is_admin:
