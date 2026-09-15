@@ -6,10 +6,6 @@ from getpass import getpass
 from flask import redirect
 import os
 global user
-#to do
-#session cookies
-#privalages
-#
 
 app = Flask(__name__)
 
@@ -86,10 +82,6 @@ def login():
     
         if username != '' and password != '':
             user = Profile.query.filter_by(username=username).first() #getting base data
-
-            if user is None:
-                print('user not found')
-                return render_template("notfound_user.html")
 
             user_1 = bcrypt.check_password_hash(user.password, password) #checking passwords
 
