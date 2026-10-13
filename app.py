@@ -4,10 +4,19 @@ from flask_bcrypt import Bcrypt
 from flask_session import Session
 from getpass import getpass
 from flask import redirect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_limiter.errors import RateLimitExceeded
 import os
-global user
 
 app = Flask(__name__)
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://",
+)
 
 bcrypt = Bcrypt(app)
 
@@ -20,6 +29,7 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", os.urandom(32))
 
 db = SQLAlchemy(app)
 Session(app)
+
 
 class Profile(db.Model): #setting up sql
     id = db.Column(db.Integer, primary_key=True)
@@ -69,12 +79,17 @@ def list_admins():
     for i in data:
         print(i.username)
 
+
+@app.errorhandler(RateLimitExceeded)
+def ratelimit_handler(e):
+    return render_template("429.html"), 429
+
 @app.route("/",methods=["GET","POST"])
 def main_page():
     return render_template("mainpage.html")
 
-
 @app.route("/login",methods=["GET","POST"])
+@limiter.limit("3 per minute",methods=["POST"])
 def login():
     if request.method=="POST":
         username=request.form["username"]
@@ -85,7 +100,7 @@ def login():
 
             if user == None:
                 print("wrong username")
-                return render_template("log_in.html",error="Wrong username or password")
+                return render_template("log_in.html",error="Wrong username or password" ,disabled=0)
 
             user_1 = bcrypt.check_password_hash(user.password, password) #checking passwords
 
@@ -99,10 +114,10 @@ def login():
                 print('login successful')
                 session["user_id"] = user.id
                 return redirect(f"/user/{user.id}")
-            
+        
             else:
                 print('wrong password')
-                return render_template("log_in.html",error="Wrong username or password")
+                return render_template("log_in.html",error="Wrong username or password",disabled=0)
 
     return render_template("log_in.html")
 
@@ -138,7 +153,7 @@ def loging_out():
     session.clear()
     return redirect("/")
 
-@app.route("/delete/<int:id>")
+@app.route("/delete/<int:id>",methods=["GET","POST"])
 def delete(id):
     if not session.get("is_admin"):
         return redirect("/")
@@ -171,6 +186,9 @@ def edit(id):
 @app.route("/user/<int:id>")
 def user_profile(id):
     user=Profile.query.filter_by(id=id).first()
+    if user == None:
+        print("user not found")
+        return redirect("/")
     if not session.get("user_id")==user.id:
         return redirect("/")
     return render_template("user_profile.html",user=user)
