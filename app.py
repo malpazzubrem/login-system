@@ -1,24 +1,17 @@
-from flask import Flask, render_template,request,session
-from flask_sqlalchemy import SQLAlchemy
-from flask_bcrypt import Bcrypt 
-from flask_session import Session
-from getpass import getpass
-from flask import redirect
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
-from flask_limiter.errors import RateLimitExceeded
 import os
+from flask import Flask,request,redirect,render_template
+from flask_session import Session
+from extensions import db, bcrypt, limiter
+from routes.login import login_Bp
+from models import Profile
+import getpass
 
 app = Flask(__name__)
 
-limiter = Limiter(
-    get_remote_address,
-    app=app,
-    default_limits=["200 per day", "50 per hour"],
-    storage_uri="memory://",
-)
-
-bcrypt = Bcrypt(app)
+db.init_app(app)
+bcrypt.init_app(app)
+limiter.init_app(app)
+session = Session(app)
 
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///site.db"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False #configuring base
@@ -27,19 +20,7 @@ app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem" #configuring session
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", os.urandom(32))
 
-db = SQLAlchemy(app)
-Session(app)
-
-
-class Profile(db.Model): #setting up sql
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(20),unique=False,nullable=False)
-    password = db.Column(db.String(128),unique=False,nullable=False)
-    is_admin = db.Column(db.Boolean, default=False)
-
-    def __repr__(self):
-        return f"username : {self.username}"
-
+app.register_blueprint(login_Bp)
 @app.cli.command("create-admin")
 def create_admin():
     username = input("write admin username: ")
@@ -80,46 +61,9 @@ def list_admins():
         print(i.username)
 
 
-@app.errorhandler(RateLimitExceeded)
-def ratelimit_handler(e):
-    return render_template("429.html"), 429
-
 @app.route("/",methods=["GET","POST"])
 def main_page():
     return render_template("mainpage.html")
-
-@app.route("/login",methods=["GET","POST"])
-@limiter.limit("3 per minute",methods=["POST"])
-def login():
-    if request.method=="POST":
-        username=request.form["username"]
-        password=request.form["password"] #getting userdata
-    
-        if username != '' and password != '':
-            user = Profile.query.filter_by(username=username).first() #getting base data
-
-            if user == None:
-                print("wrong username")
-                return render_template("log_in.html",error="Wrong username or password" ,disabled=0)
-
-            user_1 = bcrypt.check_password_hash(user.password, password) #checking passwords
-
-            if user_1 and user.is_admin:
-                session["user_id"] = user.id
-                session["is_admin"] = user.is_admin
-                print("admin login")
-                return redirect('/admin')
-
-            elif user_1:
-                print('login successful')
-                session["user_id"] = user.id
-                return redirect(f"/user/{user.id}")
-        
-            else:
-                print('wrong password')
-                return render_template("log_in.html",error="Wrong username or password",disabled=0)
-
-    return render_template("log_in.html")
 
 @app.route("/signin",methods=["GET","POST"])
 def signin():
